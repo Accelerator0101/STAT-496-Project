@@ -1,1 +1,14 @@
+Project Ideas — STAT 496 Capstone
 
+- Idea 1: Prompt Wording Sensitivity and Output Variability
+We will study how small changes in prompt wording (e.g., politeness, specificity, or framing) affect the variability and consistency of LLM outputs. 
+The experiment will involve systematically modifying prompts, collecting multiple responses per condition via API calls, and comparing response similarity
+using embedding-based distance metrics and summary statistics.
+
+- Idea 2: Reproducibility of LLM Outputs Under Identical Conditions
+This project investigates how reproducible LLM responses are when given the same prompt repeatedly under identical settings (temperature, model, system prompt). 
+We will quantify variability across runs and analyze how parameters such as temperature influence output stability.
+
+- Idea 3: Bias in LLM Responses Across Demographic Cues
+We will examine whether LLM responses differ when prompts include different demographic signals (e.g., names, occupations, or geographic references). 
+The analysis will compare sentiment, content themes, and linguistic features across conditions using statistical tests and regression models.
