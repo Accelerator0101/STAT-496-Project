@@ -1,0 +1,5 @@
+Condition,correct,total,accuracy
+zero_shot,6,30,20.0
+definitions,3,30,10.0
+few_shot,8,30,26.7
+many_shot,8,30,26.7
