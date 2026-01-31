@@ -58,7 +58,6 @@ Three prompt conditions were tested, differing **only in the number of in-contex
 
 All prompts shared the same task description and output format, with the number of in-context examples as the only varying factor.
 
----
 
 ## What kind of responses were received
 
