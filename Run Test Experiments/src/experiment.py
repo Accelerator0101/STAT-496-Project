@@ -7,12 +7,13 @@ from dotenv import load_dotenv
 
 class SentimentExperiment:
     """Sentiment classification experiment with different prompt conditions."""
-    
+
     def __init__(self, config):
         load_dotenv()
         self.config = config
-        self.model = config.get("model", "gpt-3.5-turbo")
-        self.test_size = config.get("test_size", 30)
+        self.models = config.get("models", ["gpt-3.5-turbo"])
+        self.temperatures = config.get("temperatures", [0])
+        self.test_size = config.get("test_size", 50)
         self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         self.results = {}
     
@@ -34,41 +35,59 @@ class SentimentExperiment:
         return self
     
     def run(self):
-        """Run all conditions and store results."""
+        """Run all combinations of model x temperature x prompt condition."""
         conditions = {
             "zero_shot": self._prompt_zero_shot(),
             "definitions": self._prompt_definitions(),
             "few_shot": self._prompt_with_examples(self.few_examples),
             "many_shot": self._prompt_with_examples(self.many_examples)
         }
-        
-        for name, prompt in conditions.items():
-            response = self._call_api(prompt)
-            predictions = self._parse_response(response)
-            correct = sum(p == t for p, t in zip(predictions, self.ground_truth))
-            
-            self.results[name] = {
-                "predictions": predictions,
-                "correct": correct,
-                "total": self.test_size,
-                "accuracy": round(correct / self.test_size * 100, 1)
-            }
+
+        for model in self.models:
+            for temp in self.temperatures:
+                for name, prompt in conditions.items():
+                    key = (model, temp, name)
+                    print(f"Running: model={model}, temp={temp}, condition={name}")
+
+                    response = self._call_api(prompt, model, temp)
+                    if response is None:
+                        print(f"  Skipped (API error)")
+                        continue
+
+                    predictions = self._parse_response(response)
+                    n = len(predictions)
+                    if n == 0:
+                        continue
+                    correct = sum(p == t for p, t in zip(predictions, self.ground_truth))
+
+                    self.results[key] = {
+                        "predictions": predictions,
+                        "correct": correct,
+                        "total": n,
+                        "accuracy": round(correct / n * 100, 1)
+                    }
         return self
     
     def save_results(self, output_dir):
         """Save accuracy summary and detailed predictions to CSV."""
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Accuracy summary
-        summary = [{"Condition": k, **{k2: v2 for k2, v2 in v.items() if k2 != "predictions"}} 
-                   for k, v in self.results.items()]
+        summary = [
+            {"Model": model, "Temperature": temp, "Condition": cond,
+             "Correct": data["correct"], "Total": data["total"], "Accuracy": data["accuracy"]}
+            for (model, temp, cond), data in self.results.items()
+        ]
         pd.DataFrame(summary).to_csv(f"{output_dir}/accuracy_results.csv", index=False)
-        
+
         # Detailed predictions
         detailed = [
-            {"Condition": cond, "Tweet": i+1, "True": self.ground_truth[i], 
-             "Predicted": data["predictions"][i], "Correct": data["predictions"][i] == self.ground_truth[i]}
-            for cond, data in self.results.items() for i in range(self.test_size)
+            {"Model": model, "Temperature": temp, "Condition": cond,
+             "Tweet": i+1, "True": self.ground_truth[i],
+             "Predicted": data["predictions"][i],
+             "Correct": data["predictions"][i] == self.ground_truth[i]}
+            for (model, temp, cond), data in self.results.items()
+            for i in range(len(data["predictions"]))
         ]
         pd.DataFrame(detailed).to_csv(f"{output_dir}/detailed_predictions.csv", index=False)
         return self
@@ -125,22 +144,35 @@ Tweets:
 
 Output:"""
     
-    def _call_api(self, prompt):
+    def _call_api(self, prompt, model, temperature):
         try:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=100
-            )
+            params = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+            }
+            if model in ("gpt-5", "o1", "o3", "o4-mini"):
+                params["max_completion_tokens"] = 250
+            else:
+                params["max_tokens"] = 250
+            resp = self.client.chat.completions.create(**params)
             return resp.choices[0].message.content.strip()
         except Exception as e:
-            return "error\n" * self.test_size
+            print(f"  API error: {e}")
+            return None
     
     def _parse_response(self, response):
-        labels = [re.sub(r'^\d+[\.\:\)]\s*', '', line).strip().lower()
-                  for line in response.split('\n') if line.strip()]
-        return (labels + ["error"] * self.test_size)[:self.test_size]
+        # First split by newlines, then handle merged lines (e.g. "3. Neutral 4. Positive")
+        lines = [line for line in response.split('\n') if line.strip()]
+        labels = []
+        for line in lines:
+            # Split line on numbered patterns to catch merged entries
+            parts = re.split(r'(?<=\s)\d+[\.\:\)]\s*', line)
+            for part in parts:
+                cleaned = re.sub(r'^\d+[\.\:\)]\s*', '', part).strip().lower()
+                if cleaned:
+                    labels.append(cleaned)
+        return labels[:self.test_size]
     
     @staticmethod
     def _cat_to_label(cat):
