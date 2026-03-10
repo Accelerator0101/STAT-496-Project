@@ -1,41 +1,46 @@
 # STAT 496 Capstone: Prompt Engineering Experiment
 
-Testing the effect of prompt structure (in-context examples) and temperature on LLM sentiment classification accuracy and output consistency.
+This project examines how prompt structure and temperature affect large language model performance on sentiment classification. The task is to classify tweets as positive, neutral, or negative while comparing both accuracy and output consistency across repeated runs.
+
+## Overview
+
+Each run uses 100 tweets. The experiment tests three models: GPT-3.5-Turbo, GPT-4.1-mini, and GPT-4.1. Every model is evaluated under four prompt conditions and four temperature settings. Each configuration is repeated three times to measure consistency.
+
+The four prompt conditions are zero-shot, definitions, few-shot, and many-shot. The temperature settings are 0, 0.5, 1.0, and 2.0.
+
+The full experiment includes 144 API calls.
 
 ## Experiment Design
 
-**Task**: Classify Twitter sentiment as positive, neutral, or negative (100 tweets per run)
+The task is Twitter sentiment classification with three labels: positive, neutral, and negative.
 
-**Models**:
-- GPT-3.5-Turbo
-- GPT-4.1-mini
-- GPT-4.1
+Zero-shot uses only the task instruction and the input tweets.
 
-**Prompt Conditions**:
-1. Zero-shot — No examples
-2. Zero-shot + Definitions — Explain what positive/negative/neutral means
-3. Few-shot (3) — 1 positive, 1 negative, 1 neutral example
-4. Many-shot (10) — 3 positive, 3 negative, 4 neutral examples
+Definitions uses the task instruction together with explicit definitions of positive, negative, and neutral sentiment.
 
-**Temperature Settings**: 0, 0.5, 1.0, 2.0
+Few-shot uses three labeled examples before the input tweets, with one example from each class.
 
-**Runs per Configuration**: 3 (to measure consistency)
+Many-shot uses ten labeled examples before the input tweets, including three positive examples, three negative examples, and four neutral examples.
 
-**Total API Calls**: 3 models x 4 temperatures x 4 conditions x 3 runs = 144
+Each configuration is repeated three times to evaluate how stable the model outputs remain across runs.
 
 ## Setup
 
-1. Install dependencies:
+Install the required dependencies with:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Add your OpenAI API key to `.env`:
-```
+Create a `.env` file and add your OpenAI API key:
+
+```env
 OPENAI_API_KEY=your_key_here
 ```
 
-## Run
+## Running the Experiment
+
+Run the project with:
 
 ```bash
 python3 main.py
@@ -43,57 +48,72 @@ python3 main.py
 
 ## Configuration
 
-Edit `main.py` to change:
-- `models` — List of OpenAI models to test
-- `temperatures` — List of temperature values
-- `num_runs` — Number of runs per configuration (for consistency measurement)
-- `test_size` — Number of tweets to classify (default: 100)
-- `few_shot` / `many_shot` — Number of examples per category
+You can edit `main.py` to change the experimental settings.
 
-## Output
+`models` controls which OpenAI models are tested.
 
-Results saved to `Results/`:
-- `accuracy_results.csv` — Accuracy summary per condition with consistency scores
-- `detailed_predictions.csv` — Per-tweet predictions with per-tweet consistency
+`temperatures` controls the sampling temperatures.
 
-### Output Columns
+`num_runs` sets how many times each configuration is repeated.
+
+`test_size` sets the number of tweets classified in each run. The default is 100.
+
+`few_shot` and `many_shot` control how many labeled examples are included in those prompt conditions.
+
+## Output Files
+
+Results are saved in the `Results/` directory.
+
+`accuracy_results.csv` contains summary statistics for each configuration, including accuracy and consistency.
+
+`detailed_predictions.csv` contains tweet-level predictions and tweet-level consistency values.
+
+## Output Columns
 
 | Column | Description |
 |--------|-------------|
-| Model | The LLM used |
-| Temperature | Sampling temperature (0 = deterministic, 2 = max randomness) |
-| Condition | Prompt type (zero_shot, definitions, few_shot, many_shot) |
-| Correct | Number of correct predictions (first run) |
-| Total | Total tweets classified |
-| Accuracy | Accuracy of the first run (%) |
-| Avg_Accuracy | Average accuracy across all runs (%) |
-| Consistency | Average majority agreement rate across tweets (1.0 = perfectly stable) |
+| Model | The model used for classification |
+| Temperature | The sampling temperature |
+| Condition | The prompt condition |
+| Correct | Number of correct predictions from run 1 |
+| Total | Number of tweets classified |
+| Accuracy | Accuracy from run 1 as a percentage |
+| Avg_Accuracy | Mean accuracy across all runs |
+| Consistency | Mean majority agreement across tweets |
 | Num_Runs | Number of successful runs |
 
 ## Consistency Metric
 
-For each tweet, consistency is calculated as:
+Consistency is computed at the tweet level across repeated runs.
 
-**Consistency = (count of most frequent label across K runs) / K**
+For each tweet, consistency is defined as the number of times the most common label appears divided by the total number of runs.
 
-Then averaged across all tweets. A score of 1.0 means every run produced the same label for every tweet. A score of 0.33 would mean completely random outputs.
+If a tweet receives the same label in every run, its consistency score is 1.0. If predictions vary more across runs, the score is lower.
 
-## What Prompts Were Used
+The final consistency value reported for a configuration is the average of these tweet-level scores across the full dataset.
 
-Each prompt asked the model to classify tweets as **Positive**, **Negative**, or **Neutral**. Four prompt conditions were tested, differing only in the amount of context provided:
+## Prompt Structure
 
-- **Zero-shot:** Only the task instruction and input tweets.
-- **Definitions:** Task instruction plus explicit definitions of each sentiment category.
-- **Few-shot:** Three labeled examples (one per class) before the input tweets.
-- **Many-shot:** Ten labeled examples (3 positive, 3 negative, 4 neutral) before the input tweets.
+All prompts ask the model to classify tweets as positive, negative, or neutral. The base instruction and output format remain the same across all conditions. The only difference is how much context is provided before the test tweets.
 
-All prompts shared the same base instruction and output format.
+Zero-shot includes no labeled examples.
+
+Definitions adds explicit descriptions of each sentiment category.
+
+Few-shot includes three labeled examples.
+
+Many-shot includes ten labeled examples.
 
 ## Key Findings
 
-- **Model capability is the dominant factor**: GPT-4.1 (92-95%) >> GPT-4.1-mini (68-84%) >> GPT-3.5-turbo (55-76%)
-- **Higher temperature reduces both accuracy and consistency** across all models
-- **Few-shot/many-shot prompts** provide slight accuracy gains and better consistency at higher temperatures
-- **Definitions** help more than raw zero-shot, especially for weaker models
-- **GPT-4.1** maintains high consistency (~0.9+) even at temperature=2.0
-- **GPT-3.5-turbo at temperature=2.0** shows the most erratic behavior (consistency as low as 0.667)
+Model capability is the strongest factor in performance. GPT-4.1 achieves the highest accuracy, followed by GPT-4.1-mini, then GPT-3.5-Turbo.
+
+Higher temperature generally lowers both accuracy and consistency.
+
+Few-shot and many-shot prompting provide small accuracy improvements and tend to improve consistency when temperature is high.
+
+Definitions are usually more helpful than plain zero-shot prompting, especially for weaker models.
+
+GPT-4.1 remains highly consistent even at temperature 2.0.
+
+GPT-3.5-Turbo at temperature 2.0 produces the least stable outputs and shows the lowest consistency scores.
