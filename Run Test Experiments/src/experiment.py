@@ -1,6 +1,8 @@
 import pandas as pd
 import re
 import os
+import time
+from collections import Counter
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -13,6 +15,7 @@ class SentimentExperiment:
         self.config = config
         self.models = config.get("models", ["gpt-3.5-turbo"])
         self.temperatures = config.get("temperatures", [0])
+        self.num_runs = config.get("num_runs", 1)
         self.test_size = config.get("test_size", 50)
         self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         self.results = {}
@@ -47,24 +50,57 @@ class SentimentExperiment:
             for temp in self.temperatures:
                 for name, prompt in conditions.items():
                     key = (model, temp, name)
-                    print(f"Running: model={model}, temp={temp}, condition={name}")
+                    all_run_predictions = []
 
-                    response = self._call_api(prompt, model, temp)
-                    if response is None:
-                        print(f"  Skipped (API error)")
+                    for run_i in range(self.num_runs):
+                        print(f"Running: model={model}, temp={temp}, condition={name}, run={run_i+1}/{self.num_runs}")
+
+                        response = self._call_api(prompt, model, temp)
+                        if response is None:
+                            print(f"  Skipped (API error)")
+                            continue
+                        time.sleep(1)
+
+                        predictions = self._parse_response(response)
+                        if len(predictions) > 0:
+                            all_run_predictions.append(predictions)
+
+                    if not all_run_predictions:
                         continue
 
-                    predictions = self._parse_response(response)
-                    n = len(predictions)
-                    if n == 0:
-                        continue
-                    correct = sum(p == t for p, t in zip(predictions, self.ground_truth))
+                    # Use first run as the "primary" predictions for accuracy
+                    primary = all_run_predictions[0]
+                    n = len(primary)
+                    correct = sum(p == t for p, t in zip(primary, self.ground_truth))
+
+                    # Compute per-tweet consistency across runs
+                    consistency_scores = []
+                    k = len(all_run_predictions)
+                    for i in range(n):
+                        labels = [run[i] for run in all_run_predictions if i < len(run)]
+                        if labels:
+                            most_common_count = Counter(labels).most_common(1)[0][1]
+                            consistency_scores.append(most_common_count / len(labels))
+
+                    avg_consistency = round(sum(consistency_scores) / len(consistency_scores), 3) if consistency_scores else 0.0
+
+                    # Average accuracy across all runs
+                    run_accuracies = []
+                    for run_preds in all_run_predictions:
+                        rn = len(run_preds)
+                        rc = sum(p == t for p, t in zip(run_preds, self.ground_truth))
+                        run_accuracies.append(round(rc / rn * 100, 1))
 
                     self.results[key] = {
-                        "predictions": predictions,
+                        "predictions": primary,
+                        "all_run_predictions": all_run_predictions,
                         "correct": correct,
                         "total": n,
-                        "accuracy": round(correct / n * 100, 1)
+                        "accuracy": round(correct / n * 100, 1),
+                        "avg_accuracy": round(sum(run_accuracies) / len(run_accuracies), 1),
+                        "consistency": avg_consistency,
+                        "num_runs": k,
+                        "per_tweet_consistency": consistency_scores
                     }
         return self
     
@@ -75,7 +111,9 @@ class SentimentExperiment:
         # Accuracy summary
         summary = [
             {"Model": model, "Temperature": temp, "Condition": cond,
-             "Correct": data["correct"], "Total": data["total"], "Accuracy": data["accuracy"]}
+             "Correct": data["correct"], "Total": data["total"],
+             "Accuracy": data["accuracy"], "Avg_Accuracy": data["avg_accuracy"],
+             "Consistency": data["consistency"], "Num_Runs": data["num_runs"]}
             for (model, temp, cond), data in self.results.items()
         ]
         pd.DataFrame(summary).to_csv(f"{output_dir}/accuracy_results.csv", index=False)
@@ -85,7 +123,8 @@ class SentimentExperiment:
             {"Model": model, "Temperature": temp, "Condition": cond,
              "Tweet": i+1, "True": self.ground_truth[i],
              "Predicted": data["predictions"][i],
-             "Correct": data["predictions"][i] == self.ground_truth[i]}
+             "Correct": data["predictions"][i] == self.ground_truth[i],
+             "Consistency": data["per_tweet_consistency"][i] if i < len(data["per_tweet_consistency"]) else None}
             for (model, temp, cond), data in self.results.items()
             for i in range(len(data["predictions"]))
         ]
@@ -162,16 +201,17 @@ Output:"""
             return None
     
     def _parse_response(self, response):
-        # First split by newlines, then handle merged lines (e.g. "3. Neutral 4. Positive")
-        lines = [line for line in response.split('\n') if line.strip()]
         labels = []
-        for line in lines:
-            # Split line on numbered patterns to catch merged entries
-            parts = re.split(r'(?<=\s)\d+[\.\:\)]\s*', line)
-            for part in parts:
-                cleaned = re.sub(r'^\d+[\.\:\)]\s*', '', part).strip().lower()
-                if cleaned:
-                    labels.append(cleaned)
+        for line in response.split('\n'):
+            if not line.strip():
+                continue
+            text = re.sub(r'^\d+[\.\:\)]\s*', '', line).strip().lower()
+            if 'positive' in text:
+                labels.append('positive')
+            elif 'negative' in text:
+                labels.append('negative')
+            elif 'neutral' in text:
+                labels.append('neutral')
         return labels[:self.test_size]
     
     @staticmethod

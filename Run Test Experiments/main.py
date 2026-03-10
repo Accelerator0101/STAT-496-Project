@@ -2,8 +2,9 @@ from src.experiment import SentimentExperiment
 
 config = {
     "models": ["gpt-3.5-turbo", "gpt-4.1-mini", "gpt-4.1"],
-    "temperatures": [0, 0.5, 1.0],
-    "test_size": 50,
+    "temperatures": [0, 0.5, 1.0, 2.0],
+    "num_runs": 3,
+    "test_size": 100,
     "few_shot": {"pos": 1, "neg": 1, "neu": 1},
     "many_shot": {"pos": 3, "neg": 3, "neu": 4}
 }
@@ -18,4 +19,4 @@ if __name__ == "__main__":
     # Print summary
     print("\n=== Results ===")
     for (model, temp, cond), data in exp.results.items():
-        print(f"[{model} | temp={temp}] {cond}: {data['correct']}/{data['total']} = {data['accuracy']}%")
+        print(f"[{model} | temp={temp}] {cond}: {data['avg_accuracy']}% avg accuracy, {data['consistency']} consistency ({data['num_runs']} runs)")
