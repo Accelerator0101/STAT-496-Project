@@ -1,18 +1,27 @@
 # STAT 496 Capstone: Prompt Engineering Experiment
 
-Testing the effect of examples in prompts on sentiment classification accuracy.
+Testing the effect of prompt structure (in-context examples) and temperature on LLM sentiment classification accuracy and output consistency.
 
 ## Experiment Design
 
-**Task**: Classify Twitter sentiment as positive, neutral, or negative
+**Task**: Classify Twitter sentiment as positive, neutral, or negative (100 tweets per run)
 
-**Conditions**:
+**Models**:
+- GPT-3.5-Turbo
+- GPT-4.1-mini
+- GPT-4.1
+
+**Prompt Conditions**:
 1. Zero-shot — No examples
-2. Zero-shot + Definitions — Explain what pos/neg/neu means
+2. Zero-shot + Definitions — Explain what positive/negative/neutral means
 3. Few-shot (3) — 1 positive, 1 negative, 1 neutral example
 4. Many-shot (10) — 3 positive, 3 negative, 4 neutral examples
 
-**Model**: GPT-3.5-Turbo
+**Temperature Settings**: 0, 0.5, 1.0, 2.0
+
+**Runs per Configuration**: 3 (to measure consistency)
+
+**Total API Calls**: 3 models x 4 temperatures x 4 conditions x 3 runs = 144
 
 ## Setup
 
@@ -35,41 +44,56 @@ python3 main.py
 ## Configuration
 
 Edit `main.py` to change:
-- `test_size` — Number of tweets to classify
+- `models` — List of OpenAI models to test
+- `temperatures` — List of temperature values
+- `num_runs` — Number of runs per configuration (for consistency measurement)
+- `test_size` — Number of tweets to classify (default: 100)
 - `few_shot` / `many_shot` — Number of examples per category
 
 ## Output
 
-Results saved to `data/results/`:
-- `accuracy_results.csv` — Accuracy summary per condition
-- `detailed_predictions.csv` — Per-tweet predictions
+Results saved to `Results/`:
+- `accuracy_results.csv` — Accuracy summary per condition with consistency scores
+- `detailed_predictions.csv` — Per-tweet predictions with per-tweet consistency
 
+### Output Columns
 
-## What prompts were used
+| Column | Description |
+|--------|-------------|
+| Model | The LLM used |
+| Temperature | Sampling temperature (0 = deterministic, 2 = max randomness) |
+| Condition | Prompt type (zero_shot, definitions, few_shot, many_shot) |
+| Correct | Number of correct predictions (first run) |
+| Total | Total tweets classified |
+| Accuracy | Accuracy of the first run (%) |
+| Avg_Accuracy | Average accuracy across all runs (%) |
+| Consistency | Average majority agreement rate across tweets (1.0 = perfectly stable) |
+| Num_Runs | Number of successful runs |
 
-We used prompts designed for a **sentiment classification task** on real-world Twitter text data.  
-Each prompt asked the model to classify a tweet as **Positive**, **Negative**, or **Neutral**.
+## Consistency Metric
 
-Three prompt conditions were tested, differing **only in the number of in-context examples provided**:
+For each tweet, consistency is calculated as:
 
-- **0-shot:** No examples were included; only the task instruction and the input tweet were provided.
-- **Few-shot:** Three labeled examples (one per sentiment class) were included before the input tweet.
-- **Many-shot:** Multiple labeled examples per class (3 positive, 3 negative, and 4 neutral examples) were included before the input tweet.
+**Consistency = (count of most frequent label across K runs) / K**
 
-All prompts shared the same task description and output format, with the number of in-context examples as the only varying factor.
+Then averaged across all tweets. A score of 1.0 means every run produced the same label for every tweet. A score of 0.33 would mean completely random outputs.
 
+## What Prompts Were Used
 
-## What kind of responses were received
+Each prompt asked the model to classify tweets as **Positive**, **Negative**, or **Neutral**. Four prompt conditions were tested, differing only in the amount of context provided:
 
-The model responses consisted of **single sentiment labels**: `Positive`, `Negative`, or `Neutral`.
+- **Zero-shot:** Only the task instruction and input tweets.
+- **Definitions:** Task instruction plus explicit definitions of each sentiment category.
+- **Few-shot:** Three labeled examples (one per class) before the input tweets.
+- **Many-shot:** Ten labeled examples (3 positive, 3 negative, 4 neutral) before the input tweets.
 
-Across repeated runs:
-- Outputs were short and consistently formatted.
-- The model typically returned only a sentiment label without additional explanation.
-- **0-shot prompts** showed the highest variability across runs.
-- **Few-shot prompts** produced more consistent outputs.
-- **Many-shot prompts** yielded the most stable and reproducible predictions.
+All prompts shared the same base instruction and output format.
 
-## How might improve experiment?
-<br/><br/>We will use a larger and more balanced dataset so that the results are more reliable. I would also test more than one language model to see whether my findings apply more generally. We will repeat some trials when using nonzero temperature to measure variability. Finally,We will standardize output formats and analyze common mistakes to better understand where the model fails.<br/><br/>What variables do you intend to vary?<br/><br/>We plan to vary several factors, like the model being used, and the temperature setting. We will also test small changes to the input text, such as paraphrasing or adding typos, to examine how robust the model is.<br/><br/>How will you expand on your starting experiment?<br/><br/>We will begin with a simple baseline experiment and then gradually add more conditions, such as few-shot prompts and input variations. After that, We can test multiple models to see if the results remain consistent.<br/><br/>How might you automate largescale data collection?<br/><br/>We will build an automated pipeline using APIs to generate prompts, send requests to the model, and store the results. This system will also handle data cleaning, evaluation, and cost tracking. By automating these steps, it efficiently scale the experiment to larger datasets while keeping expenses under control.
-No file chosen
+## Key Findings
+
+- **Model capability is the dominant factor**: GPT-4.1 (92-95%) >> GPT-4.1-mini (68-84%) >> GPT-3.5-turbo (55-76%)
+- **Higher temperature reduces both accuracy and consistency** across all models
+- **Few-shot/many-shot prompts** provide slight accuracy gains and better consistency at higher temperatures
+- **Definitions** help more than raw zero-shot, especially for weaker models
+- **GPT-4.1** maintains high consistency (~0.9+) even at temperature=2.0
+- **GPT-3.5-turbo at temperature=2.0** shows the most erratic behavior (consistency as low as 0.667)
